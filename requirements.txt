@@ -1,0 +1,10 @@
+Bio==1.5.3
+egnn_pytorch==0.2.6
+fair_esm==1.0.2
+numpy==1.22.3
+pylcs==0.0.7
+pytorch_lightning==1.6.2
+scikit_learn==1.2.0
+torch==1.11.0
+torchmetrics==0.6.0
+tqdm==4.62.3
