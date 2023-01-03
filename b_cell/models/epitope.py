@@ -27,6 +27,7 @@ class EpitopePredictionModel(nn.Module) :
         rnn_hidden_dim: int = 512,
         rnn_num_layers: int = 2,
         rnn_bidirectional: bool = True,
+        finetune_mlp_only: bool = False,
     ) :
         super().__init__()
 
@@ -42,7 +43,7 @@ class EpitopePredictionModel(nn.Module) :
         self.ll_idx = esm_layer_cnt
 
         for param in self.esm_model.parameters() :
-            param.requires_grad = finetune_lm
+            param.requires_grad = finetune_lm and (not finetune_mlp_only)
 
         # +2  for the IEDB embeddings
         # +5  for rho TODO make len(lambda) customizable
@@ -56,6 +57,7 @@ class EpitopePredictionModel(nn.Module) :
 
         # flags
         self.finetune_lm = finetune_lm
+        self.finetune_mlp_only = finetune_mlp_only
         self.use_egnn = use_egnn
         self.use_rho = use_rho
         self.use_iedb = use_iedb
@@ -86,27 +88,30 @@ class EpitopePredictionModel(nn.Module) :
             return_hidden_state=False,
         ) if use_rnn else None
 
-        # Multi-layer perceptron
+        # multi-layer perceptron
         self.mlp = nn.Sequential(
             nn.Linear(embedding_dim if not use_rnn else d*rnn_hidden_dim, mlp_hidden_dim),
-            nn.SiLU(),
+            nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(mlp_hidden_dim, mlp_hidden_dim//2),
-            nn.SiLU(),
+            nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(mlp_hidden_dim//2, 1),
+            nn.Sigmoid(),
         )
+
+        if finetune_mlp_only :
+            for p in self.parameters() :
+                p.requires_grad = False
+            for p in self.mlp.parameters() :
+                p.requires_grad = True
 
     def forward(self, params, mask) :
         X, lens, coors, rho, adj, feat, dssp_feat, iedb_emb = params
 
-        if not self.finetune_lm : # TODO is there a cleaner way to do this?
-            with torch.no_grad() :
-                dct = self.esm_model(X, repr_layers=[self.ll_idx], return_contacts=False)
-                emb = dct["representations"][self.ll_idx]
-        else :
-            dct = self.esm_model(X, repr_layers=[self.ll_idx], return_contacts=False)
-            emb = dct["representations"][self.ll_idx]
+        # language model embeddings
+        dct = self.esm_model(X, repr_layers=[self.ll_idx], return_contacts=False)
+        emb = dct["representations"][self.ll_idx]
 
         # concatenate embeddings
         emb = torch.cat((emb, dssp_feat), 2) if self.use_dssp else emb

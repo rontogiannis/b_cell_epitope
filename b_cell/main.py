@@ -22,11 +22,11 @@ K = 10
 RADIUS = 10.
 
 MAX_PAD = 950
-NUM_EPOCHS = 60
+NUM_EPOCHS = 500
 NUM_WORKERS = 8
 BATCH_SIZE = 3 # x the number of GPUs
 
-LR = 5e-5
+LR = 1e-5
 
 esm_models = {
     "3B": {"name": "esm2_t36_3B_UR50D", "layer_cnt": 36, "dim": 2560},
@@ -43,12 +43,14 @@ def setup_cmd() :
     parser.add_argument("--test", help="test the last checkpointed model", action="store_true")
     parser.add_argument("--train", help="train a model (prioritized over testing, cannot do both at the same time)", action="store_true")
     parser.add_argument("--egnn", help="include equivariant GNN as part of the architecture", action="store_true")
-    # parser.add_argument("--rho", help="include residue depth as part of the embeddings", action="store_true")
-    # parser.add_argument("--iedb", help="include IEDB data in training", action="store_true")
+    parser.add_argument("--rho", help="include residue depth as part of the embeddings", action="store_true")
+    parser.add_argument("--iedb", help="include IEDB data in training", action="store_true")
+    parser.add_argument("--dssp", help="use DSSP embeddings (relative ASA, secondary structure, angles)", action="store_true")
     parser.add_argument("--seed", help="set the seed (default 13)", type=int, default=137)
     parser.add_argument("--dataset", help="specify which dataset inside b_cell/data/ should be used for training/testing", type=str, default="GraphBepi")
     parser.add_argument("--pretrained", help="choose a pre-trained model to load", type=str, default="")
     parser.add_argument("--checkpoint", help="choose a checkpoint for testing", type=str, default=CHECKPOINTS+"best.ckpt")
+    parser.add_argument("--rnn", help="include a multi-layer RNN as part of the architecture", action="store_true")
 
     args = vars(parser.parse_args())
 
@@ -62,16 +64,17 @@ if __name__ == "__main__" :
     if args["train"] :
         if args["pretrained"] == "" :
             model = EpitopeLitModule(
-                criterion=nn.BCEWithLogitsLoss(),
+                criterion=nn.BCELoss(),
                 lr=LR,
+                use_topk_loss=False,
                 esm_model_name=esm_models[ESM_MODEL_NAME]["name"],
                 esm_layer_cnt=esm_models[ESM_MODEL_NAME]["layer_cnt"],
                 esm_dim=esm_models[ESM_MODEL_NAME]["dim"],
                 use_egnn=args["egnn"],
-                use_rho=False,
-                use_iedb=False,
-                use_dssp=True,
-                use_rnn=True,
+                use_rho=args["rho"],
+                use_iedb=False, # args["iedb"],
+                use_dssp=args["dssp"],
+                use_rnn=args["rnn"],
                 egnn_dim=256,
                 egnn_edge_dim=21+21+2*D_SEQ+2,
                 egnn_nn=10,
@@ -87,9 +90,16 @@ if __name__ == "__main__" :
         else :
             print("Loading pretrained model from {}".format(args["pretrained"]))
             model = EpitopeLitModule.load_from_checkpoint(args["pretrained"], map_location="cpu")
-            model.hparams.lr = LR
+            model.use_topk_loss = True
+            model.model.finetune_mlp_only = True
 
-        checkpoint_path = train(
+            for p in model.model.parameters() :
+                p.requires_grad = False
+
+            for p in model.model.mlp.parameters() :
+                p.requires_grad = True
+
+        checkpoint_paths = train(
             model=model,
             num_epochs=NUM_EPOCHS,
             train_fasta=FASTA.format(args["dataset"], "train"),
@@ -108,7 +118,7 @@ if __name__ == "__main__" :
             include_iedb=False, # currently does nothing
         )
 
-        print(f"Best checkpoint saved at {checkpoint_path}")
+        print("Best checkpoints saved at\n{}".format("\n".join(checkpoint_paths)))
     elif args["test"] :
         test(
             model_checkpoint=args["checkpoint"],

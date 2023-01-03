@@ -30,7 +30,23 @@ def train(
     auc_callback = ModelCheckpoint(
         monitor="validation/auc",
         dirpath=checkpoint_dir,
-        filename="best",
+        filename="best-auc",
+        auto_insert_metric_name=False,
+        mode="max",
+    )
+
+    top_callback = ModelCheckpoint(
+        monitor="validation/top_acc",
+        dirpath=checkpoint_dir,
+        filename="best-top",
+        auto_insert_metric_name=False,
+        mode="max",
+    )
+
+    top_k_callback = ModelCheckpoint(
+        monitor="validation/top_acc_k",
+        dirpath=checkpoint_dir,
+        filename="best-top-k",
         auto_insert_metric_name=False,
         mode="max",
     )
@@ -62,11 +78,11 @@ def train(
     train_loader = DataLoader(train_split, num_workers=num_workers, batch_size=batch_size, shuffle=True)
     dev_loader = DataLoader(dev_split, num_workers=num_workers, batch_size=batch_size, shuffle=False)
 
-    wandb_logger = WandbLogger(project="b_cell")
+    wandb_logger = WandbLogger(project="b_cell top metric experiments")
 
     trainer = pl.Trainer(
         logger=wandb_logger,
-        callbacks=[auc_callback],
+        callbacks=[auc_callback, top_callback, top_k_callback],
         accelerator="gpu",
         devices=-1,
         strategy="ddp",
@@ -76,7 +92,11 @@ def train(
 
     trainer.fit(model, train_loader, dev_loader)
 
-    return auc_callback.best_model_path
+    return [
+        auc_callback.best_model_path,
+        top_callback.best_model_path,
+        top_k_callback.best_model_path,
+    ]
 
 def test(
     model_checkpoint,
