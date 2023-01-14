@@ -4,6 +4,7 @@ import torch
 from torch import nn
 from b_cell.models.egnn import EGNNModule
 from b_cell.models.rnn import RNNModule
+from b_cell.models.minifold import MiniFold
 
 class EpitopePredictionModel(nn.Module) :
     def __init__(
@@ -28,6 +29,8 @@ class EpitopePredictionModel(nn.Module) :
         rnn_num_layers: int = 2,
         rnn_bidirectional: bool = True,
         finetune_mlp_only: bool = False,
+        use_minifold: bool = False,
+        finetune_minifold: bool = False,
     ) :
         super().__init__()
 
@@ -45,10 +48,16 @@ class EpitopePredictionModel(nn.Module) :
         for param in self.esm_model.parameters() :
             param.requires_grad = finetune_lm and (not finetune_mlp_only)
 
+        if use_minifold :
+            self.minifold = MiniFold.load_from_checkpoint("/Mounts/rbg-storage1/users/jwohlwend/minifold_v1.ckpt")
+
+            for p in self.minifold.parameters() :
+                p.requires_grad = finetune_minifold
+
         # +2  for the IEDB embeddings
         # +5  for rho TODO make len(lambda) customizable
         # +11 for the dssp features
-        embedding_dim = esm_dim + \
+        embedding_dim = (esm_dim if not use_minifold else self.minifold.lm.embed_dim) + \
             (2 if use_iedb else 0) + \
             (5 if use_rho else 0) + \
             (11 if use_dssp else 0)
@@ -63,6 +72,7 @@ class EpitopePredictionModel(nn.Module) :
         self.use_iedb = use_iedb
         self.use_dssp = use_dssp
         self.use_rnn = use_rnn
+        self.use_minifold = use_minifold
 
         # Equivariant GNN
         self.egnn = nn.Sequential(
@@ -110,8 +120,11 @@ class EpitopePredictionModel(nn.Module) :
         X, lens, coors, rho, adj, feat, dssp_feat, iedb_emb = params
 
         # language model embeddings
-        dct = self.esm_model(X, repr_layers=[self.ll_idx], return_contacts=False)
-        emb = dct["representations"][self.ll_idx]
+        if not self.use_minifold :
+            dct = self.esm_model(X, repr_layers=[self.ll_idx], return_contacts=False)
+            emb = dct["representations"][self.ll_idx]
+        else :
+            _, emb = self.minifold(X)
 
         # concatenate embeddings
         emb = torch.cat((emb, dssp_feat), 2) if self.use_dssp else emb

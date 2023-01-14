@@ -2,6 +2,9 @@ import lzma
 import pickle
 import math
 import os
+import traceback
+import sys
+import Bio
 
 from sklearn.neighbors import NearestNeighbors, KDTree
 from Bio.PDB import PDBParser
@@ -240,7 +243,14 @@ def get_dssp_feats(dssp_dir, pdb_dir, pdb_id, known_seq) :
     p = PDBParser()
     structure = p.get_structure(pdb_id, pdb_dir.format(pdb_id))
     model = structure[0]
-    dssp = DSSP(model, pdb_dir.format(pdb_id), dssp="mkdssp")
+
+    try :
+        dssp = DSSP(model, pdb_dir.format(pdb_id), dssp="mkdssp")
+    except Bio.PDB.PDBExceptions.PDBException:
+        traceback.print_exc()
+        print("Culprit:", pdb_id)
+        sys.exit(0)
+
     out = []
     out_aligned = []
     seq_dssp = ""
@@ -317,8 +327,8 @@ def pick_correct_file(pdb_dir, pdb_id) :
     struct_id, chain_id = pdb_id.split("_")
     is_lower = os.path.isfile(pdb_dir.format(struct_id+"_"+chain_id.lower()))
     is_upper = os.path.isfile(pdb_dir.format(struct_id+"_"+chain_id.upper()))
-    if (is_lower and is_upper) or not (is_lower or is_upper) :
-        assert 0
+    if chain_id.isalpha() and ((is_lower and is_upper) or not (is_lower or is_upper)) :
+        assert 0, f"{is_lower=}, {is_upper=}, {struct_id+chain_id.lower()}, {struct_id+chain_id.upper()}"
     chain_id = chain_id.lower() if is_lower else chain_id.upper()
     return struct_id + "_" + chain_id
 

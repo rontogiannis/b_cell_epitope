@@ -70,7 +70,7 @@ class EpitopeDataset(Dataset) :
         ), self.mask[idx], self.y[idx]
 
     def _setup(self, tokenizer, fasta, pdb_dir, coord_dir, dssp_dir, graph_dir, rho_dir, is_iedb, max_pad, d_seq, k, radius) :
-        ids, seqs_raw = load_fasta(fasta, pdb_dir)
+        ids, seqs_raw = load_fasta(fasta)#, pdb_dir)
         seqs = [seq.upper() for seq in seqs_raw]
 
         # amino-acid tokens

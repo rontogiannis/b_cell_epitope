@@ -4,6 +4,7 @@ import torch
 from b_cell.models.epitope import EpitopePredictionModel
 from typing import Callable
 from torchmetrics import AUROC
+from torch import nn
 
 class EpitopeLitModule(pl.LightningModule) :
     def __init__(
@@ -30,15 +31,9 @@ class EpitopeLitModule(pl.LightningModule) :
         self.all = 0
 
     def configure_optimizers(self) :
-        params = list(self.model.named_parameters())
+        print(f"learning rate set to {self.hparams.lr}")
 
-        # if we are fine-tuning the language model, make sure to use small lr
-        grouped_parameters = [
-            {"params": [p for n, p in params if "esm" in n and p.requires_grad], "lr": self.hparams.lr/100.},
-            {"params": [p for n, p in params if "esm" not in n], "lr": self.hparams.lr},
-        ]
-
-        return torch.optim.Adam(grouped_parameters, lr=self.hparams.lr)
+        return torch.optim.Adam([p for p in self.model.parameters() if p.requires_grad], lr=self.hparams.lr)
 
     def gradient_norm(self) :
         total_norm = 0
@@ -77,6 +72,12 @@ class EpitopeLitModule(pl.LightningModule) :
 
         if not self.use_topk_loss :
             loss = self.criterion(out, y.float())
+            #y_0 = (y == 0)
+            #y_1 = (y == 1)
+            #out_g0 = (out > 0.1)
+            #out_l1 = (out < 0.5)
+            #loss += self.criterion(out*(y_0*out_g0).float(), y.float()*(y_0*out_g0).float())
+            #loss += self.criterion(out*(y_1*out_l1).float(), y.float()*(y_1*out_l1).float())
 
         # update metrics
         if update_auc :
@@ -107,6 +108,21 @@ class EpitopeLitModule(pl.LightningModule) :
         self.log("training/grad_norm", self.gradient_norm())
 
         return loss
+
+    def predict_step(self, batch, batch_idx) :
+        k = 10
+        params, mask, _ = batch
+        out = self.model(params, mask).squeeze(-1)
+        out_masked = out - 1e+10*(~mask).float()
+        assert mask.shape[0] == 1
+        mask = mask.flatten()
+        out_masked = out_masked.flatten()
+        out_masked = torch.masked_select(out_masked, mask)
+        l = out_masked.tolist() # torch.argsort(out_masked, dim=-1, descending=True).tolist() # torch.topk(out_masked, k, dim=-1).indices.squeeze().tolist()
+        sl = sum(l)
+        l_norm = [i/sl for i in l]
+        assert abs(sum(l_norm) - 1.0) < 1e-6, f"{sum(l_norm)}"
+        return l_norm
 
     def validation_step(self, batch, batch_idx) :
         self.log("validation/loss", self._shared_step(batch, batch_idx).item())
