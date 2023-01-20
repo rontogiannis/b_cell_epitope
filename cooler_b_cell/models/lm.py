@@ -1,36 +1,35 @@
-from torch import nn, randint
+from torch import nn
 from esm.pretrained import load_model_and_alphabet
 
-required = set()
-
-default_config = {
-    "esm_model_name": "esm2_t30_150M_UR50D",
-    "reduce_dim": 2**30,
-    "finetune": False,
-}
-
 class LanguageNet(nn.Module) :
-    def __init__(self, **config) :
-        assert required.issubset(config)
-
+    def __init__(
+        self,
+        esm_model_name: str = "esm2_t30_150M_UR50D",
+        reduce_dim: int = 2**30,
+        finetune: bool = False,
+    ) :
         super().__init__()
 
-        self.h = { **default_config, **config }
-
-        model, alphabet = load_model_and_alphabet(self.h["esm_model_name"])
-
+        model, _ = load_model_and_alphabet(esm_model_name)
         self.model = model
-        self.alphabet = alphabet
 
-        self.fc = nn.Linear(self.model.embed_dim, self.h["reduce_dim"]) if self.h["reduce_dim"] < self.model.embed_dim else nn.Identity()
+        if reduce_dim < self.model.embed_dim :
+            self.fc = nn.Linear(self.model.embed_dim, reduce_dim)
+            self.embed_dim = reduce_dim
+        else :
+            self.fc = nn.Identity()
+            self.embed_dim = self.model.embed_dim
 
         for p in self.model.parameters() :
-            p.requires_grad = self.h["finetune"]
+            p.requires_grad = finetune
 
-    def forward(self, **params) :
+    def forward(
+        self,
+        seq,
+    ) :
         idx = self.model.num_layers
 
-        seq_emb = self.model(params["seq"], repr_layers=[idx])
+        seq_emb = self.model(seq, repr_layers=[idx])
         seq_emb = seq_emb["representations"][idx]
 
         out = self.fc(seq_emb)

@@ -1,63 +1,118 @@
 from torch import nn
 from egnn_pytorch import EGNN
 
-required = {
-    "dim",
-    "edge_dim",
-}
-
-default_config = {
-    "m_dim": 256,
-    "fourier_features": 0,
-    "num_nearest_neighbors": 0,
-    "dropout": .0,
-    "norm_feats": False,
-    "norm_coors": True,
-    "update_feats": True,
-    "update_coors": False,
-    "only_sparse_neighbors": True,
-    "valid_radius": .0,
-    "m_pool_method": "sum",
-    "soft_edges": True,
-    "coor_weights_clamp_value": None,
-}
-
 class GraphUnit(nn.Module) :
-    def __init__(self, **config) :
-        assert required.issubset(config)
-
+    def __init__(
+        self,
+        dim,
+        edge_dim: int = 0,
+        m_dim: int = 16,
+        fourier_features: int = 0,
+        num_nearest_neighbors: int = 0,
+        dropout: float = 0.0,
+        init_eps: float = 1e-3,
+        norm_feats: bool = False,
+        norm_coors: bool = True,
+        norm_coors_scale_init: float = 1e-2,
+        update_feats: bool = True,
+        update_coors: bool = False,
+        only_sparse_neighbors: bool = True,
+        valid_radius: float = .0,
+        m_pool_method: str = "sum",
+        soft_edges: bool = True,
+        coor_weights_clamp_value: float = None,
+    ) :
         super().__init__()
 
-        self.h = { **default_config, **config }
-        self.model = EGNN(**self.h)
-
-    def forward(self, **params) :
-        out, crd = self.model(
-            params["embeddings"],
-            params["coordinates"],
-            edges = params["edge features"],
-            mask = params["mask"],
-            adj_mat = params["graph"],
+        self.model = EGNN(
+            dim,
+            edge_dim,
+            m_dim,
+            fourier_features,
+            num_nearest_neighbors,
+            dropout,
+            init_eps,
+            norm_feats,
+            norm_coors,
+            norm_coors_scale_init,
+            update_feats,
+            update_coors,
+            only_sparse_neighbors,
+            valid_radius,
+            m_pool_method,
+            soft_edges,
+            coor_weights_clamp_value,
         )
 
-        return {
-            "embeddings": out,
-            "coordinates": crd,
-            "edge_features": params["edge features"],
-            "mask": params["mask"],
-            "graph": params["graph"],
-        }
+    def forward(
+        self,
+        params,
+    ) :
+        emb, coord, edge_feat, mask, graph = params
+
+        out, coord_new = self.model(
+            emb,
+            coord,
+            edges = edge_feat,
+            mask = mask,
+            adj_mat = graph,
+        )
+
+        return out, coord_new, edge_feat, mask, graph
 
 class GraphNet(nn.Module) :
-    def __init__(self, num_layers, **config) :
-        assert required.issubset(config)
-
+    def __init__(
+        self,
+        num_layers: int,
+        dim: int,
+        edge_dim: int = 0,
+        m_dim: int = 16,
+        fourier_features: int = 0,
+        num_nearest_neighbors: int = 0,
+        dropout: float = 0.0,
+        init_eps: float = 1e-3,
+        norm_feats: bool = False,
+        norm_coors: bool = True,
+        norm_coors_scale_init: float = 1e-2,
+        update_feats: bool = True,
+        update_coors: bool = False,
+        only_sparse_neighbors: bool = True,
+        valid_radius: float = .0,
+        m_pool_method: str = 'sum',
+        soft_edges: bool = True,
+        coor_weights_clamp_value: float = None,
+    ) :
         super().__init__()
 
-        self.num_layers = num_layers
-        self.h = { **default_config, **config }
-        self.model = nn.Sequential(*[GraphUnit(**self.h) for i in range(num_layers)])
+        self.model = nn.Sequential(*[GraphUnit(
+            dim,
+            edge_dim,
+            m_dim,
+            fourier_features,
+            num_nearest_neighbors,
+            dropout,
+            init_eps,
+            norm_feats,
+            norm_coors,
+            norm_coors_scale_init,
+            update_feats,
+            update_coors,
+            only_sparse_neighbors,
+            valid_radius,
+            m_pool_method,
+            soft_edges,
+            coor_weights_clamp_value
+        ) for i in range(num_layers)])
 
-    def forward(self, **params) :
-        return self.model(**params)["embeddings"]
+    def forward(
+        self,
+        emb,
+        coord,
+        edge_feat,
+        mask,
+        graph,
+    ) :
+        out_tuple = self.model((emb, coord, edge_feat, mask, graph))
+
+        return out_tuple[0]
 
