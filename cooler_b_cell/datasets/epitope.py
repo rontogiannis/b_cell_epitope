@@ -18,8 +18,9 @@ class Epitope(Dataset) :
         self.padded_length = padded_length
 
         raw = load_jsonl(path)
-        tokens, coord, node_feat, edge_feat, mask, graph, y = self._setup(raw)
+        pids, tokens, coord, node_feat, edge_feat, mask, graph, y = self._setup(raw)
 
+        self.pids = pids
         self.tokens = tokens # torch.tensor(tokens, dtype=torch.long)
         self.coord = torch.tensor(coord, dtype=torch.float)
         self.node_feat = torch.tensor(node_feat, dtype=torch.float)
@@ -66,7 +67,7 @@ class Epitope(Dataset) :
         seq_with_id = list(zip(pids, seqs)) + [("dummy", "<mask>"*self.padded_length)]
         tokens = self.tokenizer.get_batch_converter()(seq_with_id)[2][:-1]
 
-        return tokens, coord, node_feat, edge_feat, mask, graph, y
+        return pids, tokens, coord, node_feat, edge_feat, mask, graph, y
 
     def __len__(self) :
         return len(self.tokens)
@@ -79,6 +80,7 @@ class Epitope(Dataset) :
         edge_feat_dense = torch.sparse.FloatTensor(edge_feat_tensor, torch.ones(edge_feat_tensor.shape[1]), self.edge_feat_dim).to_dense()
 
         return {
+            "pdb": self.pids[idx],
             "tokens": self.tokens[idx],
             "coord": self.coord[idx],
             "node_feat": self.node_feat[idx],

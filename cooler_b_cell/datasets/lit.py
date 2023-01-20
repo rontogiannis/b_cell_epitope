@@ -25,7 +25,7 @@ class EpitopeLit(pl.LightningDataModule) :
         if stage == "fit" :
             self.train_set = Epitope(self.train_path, self.esm_model_name, self.padded_length)
             self.dev_set = Epitope(self.dev_path, self.esm_model_name, self.padded_length)
-        elif stage == "test" :
+        elif stage == "test" or stage == "predict" :
             self.test_set = Epitope(self.test_path, self.esm_model_name, self.padded_length)
 
     def train_dataloader(self):

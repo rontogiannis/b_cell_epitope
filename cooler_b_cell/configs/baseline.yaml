@@ -47,6 +47,7 @@ fit:
     strategy: ddp
     log_every_n_steps: 10
     max_epochs: 50
+
 test:
   seed_everything: 13
   model: *model_ref
@@ -64,3 +65,24 @@ test:
     max_epochs: 1
   ckpt_path: /data/scratch/aronto/b_cell_epitope/cooler_b_cell/ckpt/auc.ckpt
 
+predict:
+  seed_everything: 13
+  model: *model_ref
+  data:
+    class_path: cooler_b_cell.datasets.lit.EpitopeLit
+    init_args:
+      test_path: /data/scratch/aronto/cdrdock_data/data/test.jsonl
+      esm_model_name: esm2_t30_150M_UR50D
+      padded_length: 1024
+  trainer:
+    logger: False
+    accelerator: gpu
+    devices: 1
+    strategy: ddp
+    max_epochs: 1
+    callbacks:
+      - class_path: cooler_b_cell.scripts.utils.Writer
+        init_args:
+          path: /data/scratch/aronto/b_cell_epitope/cooler_b_cell/predictions/pred.jsonl
+          write_interval: epoch
+  ckpt_path: /data/scratch/aronto/b_cell_epitope/cooler_b_cell/ckpt/auc.ckpt

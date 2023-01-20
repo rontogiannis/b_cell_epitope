@@ -61,6 +61,24 @@ class EpitopeLit(pl.LightningModule) :
     def test_step(self, batch, batch_idx) :
         self.log("test/loss", self._shared_step(batch, batch_idx).item(), sync_dist=True)
 
+    def predict_step(self, batch, batch_idx) :
+        pid = batch["pdb"]
+        tokens = batch["tokens"]
+        coord = batch["coord"]
+        node_feat = batch["node_feat"]
+        edge_feat = batch["edge_feat"]
+        mask = batch["mask"]
+        graph = batch["graph"]
+
+        out = self.model(tokens, coord, node_feat, edge_feat, mask, graph).squeeze(0)
+        out = nn.Softmax(dim=1)(out)
+        mask = mask.squeeze(0)
+
+        return {
+            "pdb": pid[0],
+            "pred": out[mask].tolist(),
+        }
+
     def on_validation_epoch_end(self) :
         self.log("validation/auc", self.auc.compute(), sync_dist=True)
 
