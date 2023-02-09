@@ -11,6 +11,7 @@ class EpitopeLit(pl.LightningDataModule) :
         batch_size: int = 8,
         esm_model_name: str = "esm2_t30_150M_UR50D",
         padded_length: int = 1024,
+        output_dim: int = 1,
     ) :
         super().__init__()
 
@@ -20,13 +21,14 @@ class EpitopeLit(pl.LightningDataModule) :
         self.batch_size = batch_size
         self.esm_model_name = esm_model_name
         self.padded_length = padded_length
+        self.output_dim = output_dim
 
     def setup(self, stage: str) :
         if stage == "fit" :
-            self.train_set = Epitope(self.train_path, self.esm_model_name, self.padded_length)
-            self.dev_set = Epitope(self.dev_path, self.esm_model_name, self.padded_length)
+            self.train_set = Epitope(self.train_path, self.esm_model_name, self.padded_length, self.output_dim)
+            self.dev_set = Epitope(self.dev_path, self.esm_model_name, self.padded_length, self.output_dim)
         elif stage == "test" or stage == "predict" :
-            self.test_set = Epitope(self.test_path, self.esm_model_name, self.padded_length)
+            self.test_set = Epitope(self.test_path, self.esm_model_name, self.padded_length, self.output_dim)
 
     def train_dataloader(self):
         return DataLoader(self.train_set, batch_size=self.batch_size, num_workers=10, shuffle=True)

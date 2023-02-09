@@ -10,12 +10,14 @@ class Epitope(Dataset) :
         path: str,
         esm_model_name: str = "esm2_t30_150M_UR50D",
         padded_length: int = 1024,
+        output_dim: int = 1,
     ) :
         super().__init__()
 
         _, tokenizer = load_model_and_alphabet(esm_model_name)
         self.tokenizer = tokenizer
         self.padded_length = padded_length
+        self.output_dim = output_dim
 
         raw = load_jsonl(path)
         pids, tokens, coord, node_feat, edge_feat, mask, graph, y = self._setup(raw)
@@ -35,6 +37,22 @@ class Epitope(Dataset) :
     def _pad(self, whatever, empty) :
         return whatever + (self.padded_length-len(whatever)+1)*[empty]
 
+    def _multi_label(self, i) :
+        if self.output_dim == 1 :
+            return 0 if i == 0 else 1
+
+        ret = [0, 0, 0]
+
+        if i == 0 or i == 1 :
+            ret[i] = 1
+        elif i == 2 :
+            ret[1] = 1
+            ret[2] = 1
+        else :
+            assert 0, "unknown label"
+
+        return ret
+
     def _setup(self, raw) :
         pids = []
         seqs = []
@@ -48,12 +66,12 @@ class Epitope(Dataset) :
 
         for line in raw :
             pid_i = line["pdb"]
-            seq_i = line["seq"]
+            seq_i = line["seq"].upper()
             coord_i = line["coord"]
             node_feat_i = line["node_feat"]
             edge_feat_i = line["edge_feat"]
             graph_i = line["graph"]
-            y_i = line["label"]
+            y_i = [self._multi_label(class_idx) for class_idx in line["label"]]
 
             pids.append(pid_i)
             seqs.append(seq_i)
@@ -62,7 +80,7 @@ class Epitope(Dataset) :
             edge_feat.append(edge_feat_i)
             mask.append(self._pad([1]*len(seq_i), 0))
             graph.append(graph_i)
-            y.append(self._pad(y_i, .0))
+            y.append(self._pad(y_i, [0, 0, 0] if self.output_dim > 1 else 0))
 
         seq_with_id = list(zip(pids, seqs)) + [("dummy", "<mask>"*self.padded_length)]
         tokens = self.tokenizer.get_batch_converter()(seq_with_id)[2][:-1]

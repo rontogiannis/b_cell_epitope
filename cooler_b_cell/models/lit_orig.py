@@ -9,21 +9,14 @@ from torch import nn
 class EpitopeLit(pl.LightningModule) :
     def __init__(
         self,
-        k: int = 10,
         lr: float = 0.001,
         **kwargs,
     ) :
         super().__init__()
 
-        self.yes = 0
-        self.yes_k = 0
-        self.all = 0
-
         self.lr = lr
-        self.k = k
         self.model = Epitope(**kwargs)
         self.criterion = nn.BCEWithLogitsLoss() if self.model.output_dim == 1 else nn.CrossEntropyLoss(weight = torch.tensor([.1, .4, .5], dtype=torch.float))
-        self.binary_criterion = nn.BCEWithLogitsLoss()
 
         assert self.model.output_dim in [1, 3]
 
@@ -46,27 +39,6 @@ class EpitopeLit(pl.LightningModule) :
         y = batch["y"]
 
         out = self.model(tokens, coord, node_feat, edge_feat, mask, graph)
-        out_epitope = torch.sum(out[:,:,1:], -1) - 99*(~mask).float()
-
-        y_epitope = torch.sum(y[:,:,1:], -1).bool().float()
-
-        top_k_obj = torch.topk(out_epitope, self.k, dim=-1)
-        top_k_idx = top_k_obj.indices
-        top_k_val = top_k_obj.values
-
-        top_1_idx = torch.argmax(out_epitope, dim=-1)
-        top_1_y = torch.gather(y_epitope, -1, top_1_idx.unsqueeze(-1)).squeeze(-1)
-        top_k_y = torch.max(torch.gather(y_epitope, -1, top_k_idx), dim=-1).values
-
-
-
-        out_epitope_top_k = torch.gather(out_epitope, -1, top_k_idx)
-        out_epitope_top_k = out_epitope_top_k.flatten()
-
-        y_top_k = torch.gather(y_epitope, -1, top_k_idx)
-        y_top_k = y_top_k.flatten()
-
-        top_k_loss = self.binary_criterion(out_epitope_top_k, y_top_k.float())
 
         mask = mask.flatten()
         out = out.flatten(end_dim=-2 if self.model.output_dim > 1 else -1)
@@ -75,27 +47,17 @@ class EpitopeLit(pl.LightningModule) :
         y = y[mask]
 
         if not training :
-
-
-            self.yes += torch.sum(top_1_y)
-            self.yes_k += torch.sum(top_k_y)
-            self.all += top_1_y.shape[0]
-
             self.auc.update(out, y)
             self.aupr.update(out, y)
 
             if self.model.output_dim == 1 :
                 self.prcurve.update(out, y)
 
-        return self.criterion(out, y.float()) + top_k_loss
+        return self.criterion(out, y.float())
 
     def on_validation_start(self) :
         self.auc.reset()
         self.aupr.reset()
-
-        self.yes = 0
-        self.yes_k = 0
-        self.all = 0
 
         if self.model.output_dim == 1 :
             self.prcurve.reset()
@@ -103,10 +65,6 @@ class EpitopeLit(pl.LightningModule) :
     def on_test_start(self) :
         self.auc.reset()
         self.aupr.reset()
-
-        self.yes = 0
-        self.yes_k = 0
-        self.all = 0
 
         if self.model.output_dim == 1 :
             self.prcurve.reset()
@@ -143,9 +101,6 @@ class EpitopeLit(pl.LightningModule) :
     def _log_on_end(self, stage) :
         self.log(f"{stage}/auc", self.auc.compute(), sync_dist = True)
         self.log(f"{stage}/aupr", self.aupr.compute(), sync_dist = True)
-
-        self.log(f"{stage}/top_1_acc", self.yes/self.all, sync_dist = True)
-        self.log(f"{stage}/top_k_acc", self.yes_k/self.all, sync_dist = True)
 
         if self.model.output_dim == 1 :
             p, r, thresholds = self.prcurve.compute()

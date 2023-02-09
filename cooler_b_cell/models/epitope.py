@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from cooler_b_cell.models.lm import LanguageNet
-from cooler_b_cell.models.egnn import GraphNet
+from cooler_b_cell.models.egnn import GraphNet, GatedGraphNet
 from cooler_b_cell.models.rnn import RecurrentNet
 
 class Epitope(nn.Module) :
@@ -24,6 +24,7 @@ class Epitope(nn.Module) :
         rnn_dropout: float = .0,
         mlp_hidden_dim: int = 256,
         mlp_dropout: float = .0,
+        output_dim: int = 3,
     ) :
         super().__init__()
 
@@ -71,11 +72,12 @@ class Epitope(nn.Module) :
             nn.Linear(mlp_embed_dim, mlp_hidden_dim),
             nn.ReLU(),
             nn.Dropout(mlp_dropout),
-            nn.Linear(mlp_hidden_dim, 3),
+            nn.Linear(mlp_hidden_dim, output_dim),
         )
 
         self.skip_egnn = skip_egnn
         self.skip_rnn = skip_rnn
+        self.output_dim = output_dim
 
     def forward(
         self,

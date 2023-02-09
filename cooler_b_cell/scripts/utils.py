@@ -8,6 +8,12 @@ def load_jsonl(path) :
         f.close()
     return json_l
 
+def dump_jsonl(ld, path) :
+    with open(path, "w") as f :
+        for l in ld :
+            f.write(json.dumps(l))
+            f.write("\n")
+        f.close()
 
 class Writer(BasePredictionWriter):
     def __init__(self, path, write_interval):
